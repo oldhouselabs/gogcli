@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/steipete/gogcli/internal/config"
@@ -182,5 +183,73 @@ func TestRequireAccount_MissingWhenMultipleTokensAndNoDefault(t *testing.T) {
 	_, err := requireAccount(flags)
 	if err == nil {
 		t.Fatalf("expected error")
+	}
+}
+
+func TestRequireAccount_AccessTokenWithAccount(t *testing.T) {
+	t.Setenv("GOG_ACCESS_TOKEN", "ya29.test-token")
+	t.Setenv("GOG_ACCOUNT", "")
+	flags := &RootFlags{Account: "flag@example.com"}
+	got, err := requireAccount(flags)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got != "flag@example.com" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestRequireAccount_AccessTokenWithEnvAccount(t *testing.T) {
+	t.Setenv("GOG_ACCESS_TOKEN", "ya29.test-token")
+	t.Setenv("GOG_ACCOUNT", "env@example.com")
+	flags := &RootFlags{}
+	got, err := requireAccount(flags)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got != "env@example.com" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestRequireAccount_AccessTokenWithoutAccount(t *testing.T) {
+	t.Setenv("GOG_ACCESS_TOKEN", "ya29.test-token")
+	t.Setenv("GOG_ACCOUNT", "")
+	flags := &RootFlags{}
+
+	// Ensure keyring is never consulted.
+	prev := openSecretsStoreForAccount
+	t.Cleanup(func() { openSecretsStoreForAccount = prev })
+	openSecretsStoreForAccount = func() (secrets.Store, error) {
+		t.Fatalf("secrets store should not be opened in access-token mode")
+		return nil, nil
+	}
+
+	_, err := requireAccount(flags)
+	if err == nil {
+		t.Fatalf("expected error when GOG_ACCESS_TOKEN set without account")
+	}
+	if !strings.Contains(err.Error(), "GOG_ACCESS_TOKEN") {
+		t.Fatalf("error should mention GOG_ACCESS_TOKEN, got: %v", err)
+	}
+}
+
+func TestRequireAccount_AccessTokenSkipsKeyringDefault(t *testing.T) {
+	t.Setenv("GOG_ACCESS_TOKEN", "ya29.test-token")
+	t.Setenv("GOG_ACCOUNT", "")
+	flags := &RootFlags{}
+
+	// A keyring default exists, but should NOT be used in access-token mode
+	// because it may refer to a different account than the token was minted for.
+	prev := openSecretsStoreForAccount
+	t.Cleanup(func() { openSecretsStoreForAccount = prev })
+	openSecretsStoreForAccount = func() (secrets.Store, error) {
+		t.Fatalf("secrets store should not be opened in access-token mode")
+		return nil, nil
+	}
+
+	_, err := requireAccount(flags)
+	if err == nil {
+		t.Fatalf("expected error, keyring default should not be used")
 	}
 }

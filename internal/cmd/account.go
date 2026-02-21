@@ -46,6 +46,14 @@ func requireAccount(flags *RootFlags) (string, error) {
 		}
 	}
 
+	// When a pre-minted access token is provided, keyring-based account
+	// resolution is not meaningful — the keyring default may refer to a
+	// different account than the one the token was minted for.  Require
+	// the caller to identify the account explicitly.
+	if os.Getenv("GOG_ACCESS_TOKEN") != "" {
+		return "", usage("GOG_ACCESS_TOKEN is set but no account specified; set --account or GOG_ACCOUNT to identify the Google account")
+	}
+
 	if store, err := openSecretsStoreForAccount(); err == nil {
 		if defaultEmail, err := store.GetDefaultAccount(client); err == nil {
 			defaultEmail = strings.TrimSpace(defaultEmail)
