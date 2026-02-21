@@ -261,6 +261,65 @@ func TestOptionsForAccountScopes_ServiceAccountPreferred(t *testing.T) {
 	}
 }
 
+func TestOptionsForAccountScopes_AccessTokenBypassesCredentials(t *testing.T) {
+	t.Setenv("GOG_ACCESS_TOKEN", "ya29.test-token")
+
+	origRead := readClientCredentials
+	origOpen := openSecretsStore
+
+	t.Cleanup(func() {
+		readClientCredentials = origRead
+		openSecretsStore = origOpen
+	})
+
+	readClientCredentials = func(string) (config.ClientCredentials, error) {
+		t.Fatalf("readClientCredentials should not be called in access-token mode")
+		return config.ClientCredentials{}, nil
+	}
+	openSecretsStore = func() (secrets.Store, error) {
+		t.Fatalf("openSecretsStore should not be called in access-token mode")
+		return nil, errBoom
+	}
+
+	opts, err := optionsForAccountScopes(context.Background(), "svc", "a@b.com", []string{"s1"})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+
+	if len(opts) == 0 {
+		t.Fatalf("expected client options")
+	}
+}
+
+func TestOptionsForAccountScopes_FallsBackWithoutAccessToken(t *testing.T) {
+	// Ensure unset so the OAuth path runs.
+	t.Setenv("GOG_ACCESS_TOKEN", "")
+
+	origRead := readClientCredentials
+	origOpen := openSecretsStore
+
+	t.Cleanup(func() {
+		readClientCredentials = origRead
+		openSecretsStore = origOpen
+	})
+
+	readClientCredentials = func(string) (config.ClientCredentials, error) {
+		return config.ClientCredentials{ClientID: "id", ClientSecret: "secret"}, nil
+	}
+	openSecretsStore = func() (secrets.Store, error) {
+		return &stubStore{tok: secrets.Token{Email: "a@b.com", RefreshToken: "rt"}}, nil
+	}
+
+	opts, err := optionsForAccountScopes(context.Background(), "svc", "a@b.com", []string{"s1"})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+
+	if len(opts) == 0 {
+		t.Fatalf("expected client options")
+	}
+}
+
 func TestNewBaseTransport_RespectsProxyAndTLSMinimum(t *testing.T) {
 	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:8888")
 

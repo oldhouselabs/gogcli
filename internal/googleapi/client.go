@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/99designs/keyring"
@@ -95,16 +96,23 @@ func optionsForAccount(ctx context.Context, service googleauth.Service, email st
 func optionsForAccountScopes(ctx context.Context, serviceLabel string, email string, scopes []string) ([]option.ClientOption, error) {
 	slog.Debug("creating client options with custom scopes", "serviceLabel", serviceLabel, "email", email)
 
-	var creds config.ClientCredentials
-
 	var ts oauth2.TokenSource
 
-	if serviceAccountTS, saPath, ok, err := tokenSourceForServiceAccountScopes(ctx, email, scopes); err != nil {
+	if tok := os.Getenv("GOG_ACCESS_TOKEN"); tok != "" {
+		// Pre-minted access token — skip all credential resolution.
+		slog.Debug("using pre-minted access token from GOG_ACCESS_TOKEN", "email", email)
+		ts = oauth2.StaticTokenSource(&oauth2.Token{
+			AccessToken: tok,
+			TokenType:   "Bearer",
+		})
+	} else if serviceAccountTS, saPath, ok, err := tokenSourceForServiceAccountScopes(ctx, email, scopes); err != nil {
 		return nil, fmt.Errorf("service account token source: %w", err)
 	} else if ok {
 		slog.Debug("using service account credentials", "email", email, "path", saPath)
 		ts = serviceAccountTS
 	} else {
+		var creds config.ClientCredentials
+
 		client, err := authclient.ResolveClient(ctx, email)
 		if err != nil {
 			return nil, fmt.Errorf("resolve client: %w", err)
